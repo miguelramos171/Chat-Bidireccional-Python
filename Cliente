@@ -1,0 +1,88 @@
+# cliente
+import socket
+import threading
+from tkinter import Tk, Text, Entry, Button, Scrollbar, END, DISABLED, NORMAL
+
+class ChatClient:
+    def __init__(self, host='127.0.0.1', port=5555):
+        self.host = host
+        self.port = port
+        self.client_socket = None
+        self.running = False
+
+        # Interfaz
+        self.root = Tk()
+        self.root.title("Cliente - Chat UNAL")
+        self.root.geometry("500x400")
+
+        self.chat_display = Text(self.root, state=DISABLED, wrap="word")
+        scrollbar = Scrollbar(self.root, command=self.chat_display.yview)
+        self.chat_display.config(yscrollcommand=scrollbar.set)
+        self.chat_display.pack(side="top", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        self.entry = Entry(self.root)
+        self.entry.pack(side="left", fill="x", expand=True, padx=5, pady=5)
+        self.entry.bind("<Return>", self.send_message_event)
+
+        self.send_btn = Button(self.root, text="Enviar", command=self.send_message)
+        self.send_btn.pack(side="right", padx=5, pady=5)
+
+        self.connect()
+
+    def connect(self):
+        try:
+            self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.client_socket.connect((self.host, self.port))
+            self.running = True
+            self._log("Conectado al servidor.")
+            threading.Thread(target=self.receive_messages, daemon=True).start()
+        except Exception as e:
+            self._log(f"Error al conectar: {e}")
+
+    def receive_messages(self):
+        while self.running and self.client_socket:
+            try:
+                data = self.client_socket.recv(1024).decode('utf-8')
+                if not data:
+                    break
+                self._log(f"Servidor: {data}")
+            except Exception:
+                break
+        self._on_disconnect()
+
+    def send_message(self):
+        msg = self.entry.get().strip()
+        if msg and self.client_socket:
+            try:
+                self.client_socket.send(msg.encode('utf-8'))
+                self._log(f"Cliente: {msg}")
+                self.entry.delete(0, END)
+            except Exception as e:
+                self._log(f"Error al enviar: {e}")
+                self._on_disconnect()
+
+    def send_message_event(self, event):
+        self.send_message()
+
+    def _on_disconnect(self):
+        self._log("Desconectado del servidor.")
+        if self.client_socket:
+            self.client_socket.close()
+        self.running = False
+
+    def _log(self, text):
+        self.chat_display.config(state=NORMAL)
+        self.chat_display.insert(END, text + "\n")
+        self.chat_display.see(END)
+        self.chat_display.config(state=DISABLED)
+
+    def run(self):
+        self.root.protocol("WM_DELETE_WINDOW", self.root.quit)
+        self.root.mainloop()
+        self._on_disconnect()
+
+
+if __name__ == "__main__":
+    client = ChatClient()
+    client.run()

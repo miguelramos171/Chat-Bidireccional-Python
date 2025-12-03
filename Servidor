@@ -1,0 +1,101 @@
+# server
+import socket
+import threading
+from tkinter import Tk, Text, Scrollbar, END, DISABLED, NORMAL
+
+class ChatServer:
+    def __init__(self, host='127.0.0.1', port=5555):
+        self.host = host
+        self.port = port
+        self.server_socket = None
+        self.client_socket = None
+        self.client_addr = None
+        self.running = False
+
+        # Interfaz gráfica
+        self.root = Tk()
+        self.root.title("Servidor - Chat UNAL")
+        self.root.geometry("500x400")
+
+        self.chat_display = Text(self.root, state=DISABLED, wrap="word")
+        scrollbar = Scrollbar(self.root, command=self.chat_display.yview)
+        self.chat_display.config(yscrollcommand=scrollbar.set)
+        self.chat_display.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        self._log("Servidor iniciado. Esperando cliente...")
+
+    def start(self):
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen(1)
+        self.running = True
+
+        threading.Thread(target=self.accept_client, daemon=True).start()
+        self.root.mainloop()
+
+    def accept_client(self):
+        try:
+            self._log("Escuchando en {}:{}".format(self.host, self.port))
+            self.client_socket, self.client_addr = self.server_socket.accept()
+            self._log(f"Cliente conectado desde {self.client_addr}")
+
+            # Inicia hilo para recibir
+            threading.Thread(target=self.receive_messages, daemon=True).start()
+        except Exception as e:
+            if self.running:
+                self._log(f"Error al aceptar cliente: {e}")
+
+    def receive_messages(self):
+        while self.running and self.client_socket:
+            try:
+                data = self.client_socket.recv(1024).decode('utf-8')
+                if not data:
+                    break
+                self._log(f"Cliente: {data}")
+            except ConnectionResetError:
+                break
+            except Exception as e:
+                self._log(f"Error al recibir: {e}")
+                break
+        self._on_client_disconnect()
+
+    def send_message(self, msg):
+        if self.client_socket:
+            try:
+                self.client_socket.send(msg.encode('utf-8'))
+                self._log(f"Servidor: {msg}")
+            except Exception as e:
+                self._log(f"Falló envío: {e}")
+                self._on_client_disconnect()
+
+    def _on_client_disconnect(self):
+        self._log("Cliente desconectado.")
+        if self.client_socket:
+            self.client_socket.close()
+        self.client_socket = None
+        self.client_addr = None
+        # Puedes reiniciar `accept_client` si quieres esperar otro cliente
+
+    def _log(self, text):
+        self.chat_display.config(state=NORMAL)
+        self.chat_display.insert(END, text + "\n")
+        self.chat_display.see(END)
+        self.chat_display.config(state=DISABLED)
+
+    def stop(self):
+        self.running = False
+        if self.client_socket:
+            self.client_socket.close()
+        if self.server_socket:
+            self.server_socket.close()
+        self.root.quit()
+
+
+if __name__ == "__main__":
+    server = ChatServer()
+    try:
+        server.start()
+    except KeyboardInterrupt:
+        server.stop()
